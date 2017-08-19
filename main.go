@@ -13,33 +13,47 @@ import (
 
 type migrateConfig struct {
 	RetentionTime   time.Duration
+	InputDirectory  string
 	OutputDirectory string
 }
 
 func parseFlags() (migrateConfig, error) {
 	var config migrateConfig
+	pflag.StringVarP(&config.InputDirectory, "input", "i", "", "Directory of local storage to convert.")
 	pflag.StringVarP(&config.OutputDirectory, "output", "o", "", "Directory for new TSDB database.")
 	pflag.DurationVarP(&config.RetentionTime, "retention", "r", 15*24*time.Hour, "Retention time of new database.")
 	pflag.Parse()
 
-	if config.OutputDirectory == "" {
-		pflag.Usage()
-		return config, errors.New("need to specify an output directory")
+	if err := checkDirectory(config.InputDirectory); err != nil {
+		return config, fmt.Errorf("error checking input: %s", err)
 	}
 
-	stat, err := os.Stat(config.OutputDirectory)
-	switch {
-	case os.IsNotExist(err):
-		return config, fmt.Errorf("output does not exist: %s", config.OutputDirectory)
-	case err != nil:
-		return config, fmt.Errorf("error getting info of output %s: %s", config.OutputDirectory, err)
-	}
-
-	if !stat.IsDir() {
-		return config, fmt.Errorf("output is no directory: %s", config.OutputDirectory)
+	if err := checkDirectory(config.OutputDirectory); err != nil {
+		return config, fmt.Errorf("error checking output: %s", err)
 	}
 
 	return config, nil
+}
+
+func checkDirectory(dir string) error {
+	if dir == "" {
+		pflag.Usage()
+		return errors.New("not specified")
+	}
+
+	stat, err := os.Stat(dir)
+	switch {
+	case os.IsNotExist(err):
+		return fmt.Errorf("does not exist: %s", dir)
+	case err != nil:
+		return fmt.Errorf("error getting info for %s: %s", dir, err)
+	}
+
+	if !stat.IsDir() {
+		return fmt.Errorf("no directory: %s", dir)
+	}
+
+	return nil
 }
 
 func main() {
@@ -55,9 +69,13 @@ func main() {
 		NoLockfile:        false,
 	}
 
+	log.Printf("Opening TSDB: %s", config.OutputDirectory)
 	db, err := tsdb.Open(config.OutputDirectory, nil, nil, opts)
 	if err != nil {
 		log.Fatalf("Error creating tsdb: %s", err)
 	}
-	defer db.Close()
+	defer func() {
+		log.Printf("Closing TSDB...")
+		db.Close()
+	}()
 }
