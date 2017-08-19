@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/tsdb"
 	"github.com/spf13/pflag"
 )
@@ -62,7 +63,33 @@ func main() {
 		log.Fatalf("Error in flags: %s", err)
 	}
 
-	opts := &tsdb.Options{
+	storageOpts := &local.MemorySeriesStorageOptions{
+		TargetHeapSize:             2 * 1024 * 1024 * 1024,
+		PersistenceStoragePath:     config.InputDirectory,
+		PersistenceRetentionPeriod: config.RetentionTime,
+		HeadChunkTimeout:           5 * time.Minute,
+		CheckpointInterval:         24 * time.Hour,
+		CheckpointDirtySeriesLimit: 5000,
+		Dirty:          false,
+		PedanticChecks: false,
+		SyncStrategy:   local.Adaptive,
+		MinShrinkRatio: 0.1,
+		NumMutexes:     4096,
+	}
+
+	log.Printf("Opening local storage: %s", config.InputDirectory)
+	localStorage := local.NewMemorySeriesStorage(storageOpts)
+	if err := localStorage.Start(); err != nil {
+		log.Fatalf("Error starting local storage: %s", err)
+	}
+	defer func() {
+		log.Println("Stopping local storage...")
+		if err := localStorage.Stop(); err != nil {
+			log.Printf("Error stopping local storage: %s", err)
+		}
+	}()
+
+	tsdbOpts := &tsdb.Options{
 		WALFlushInterval:  time.Second * 30,
 		RetentionDuration: uint64(config.RetentionTime.Seconds() * 1000),
 		BlockRanges:       tsdb.ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
@@ -70,12 +97,12 @@ func main() {
 	}
 
 	log.Printf("Opening TSDB: %s", config.OutputDirectory)
-	db, err := tsdb.Open(config.OutputDirectory, nil, nil, opts)
+	db, err := tsdb.Open(config.OutputDirectory, nil, nil, tsdbOpts)
 	if err != nil {
 		log.Fatalf("Error creating tsdb: %s", err)
 	}
 	defer func() {
-		log.Printf("Closing TSDB...")
+		log.Println("Closing TSDB...")
 		db.Close()
 	}()
 }
