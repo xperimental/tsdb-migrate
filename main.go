@@ -19,6 +19,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
+var (
+	stepTime = 1 * time.Hour
+)
+
 type migrateConfig struct {
 	RetentionTime   time.Duration
 	InputDirectory  string
@@ -125,10 +129,10 @@ func main() {
 	case <-done:
 	case <-term:
 		log.Printf("Caught interrupt. Exiting...")
+		cancel()
 	}
 
 	log.Printf("Shutting down...")
-	cancel()
 }
 
 func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeriesStorage, output *tsdb.DB) {
@@ -139,56 +143,72 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 
 	now := time.Now()
 
-	stepTime := 1 * time.Hour
+	timeStamp, err := findStart(ctx, input, everything)
+	if err != nil {
+		log.Fatalf("Error finding start: %s", err)
+	}
 
-	timeStamp := time.Unix(0, 0)
-	for {
+	for ctx.Err() == nil {
 		if now.Before(timeStamp) {
 			break
 		}
 
-		startTime := model.TimeFromUnix(timeStamp.Unix())
-		endTime := model.TimeFromUnix(timeStamp.Add(stepTime).Unix())
-		log.Printf("Now at %s - %s", startTime.Time(), endTime.Time())
+		end := timeStamp.Add(stepTime)
 
-		interval := metric.Interval{
-			OldestInclusive: startTime,
-			NewestInclusive: endTime,
+		if err := convertRange(ctx, timeStamp, end, input, output, everything); err != nil {
+			log.Fatalf("Error converting range: %s", err)
 		}
 
-		appender := output.Appender()
-
-		iteratorSlice, err := input.QueryRange(ctx, startTime, endTime, everything)
-		if err != nil {
-			log.Fatalf("Error during query: %s", err)
-		}
-
-		metricCount := 0
-		sampleCount := 0
-
-		for _, iterator := range iteratorSlice {
-			metricCount++
-			metric := iterator.Metric().Metric
-			labels := convertMetric(metric)
-
-			samples := iterator.RangeValues(interval)
-			for _, sample := range samples {
-				sampleCount++
-				appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
-			}
-			iterator.Close()
-		}
-
-		if err := appender.Commit(); err != nil {
-			log.Fatalf("Error during commit: %s", err)
-		}
-
-		log.Printf("TS: %s Metrics: %d Samples: %d", timeStamp, metricCount, sampleCount)
-
-		timeStamp = timeStamp.Add(stepTime)
+		timeStamp = end
 	}
 
 	done <- struct{}{}
+}
+
+func findStart(ctx context.Context, input *local.MemorySeriesStorage, matcher *metric.LabelMatcher) (time.Time, error) {
+	start := time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	return start, nil
+}
+
+func convertRange(ctx context.Context, start, end time.Time, input *local.MemorySeriesStorage, output *tsdb.DB, matcher *metric.LabelMatcher) error {
+	modelStart := model.TimeFromUnix(start.Unix())
+	modelEnd := model.TimeFromUnix(end.Unix())
+
+	interval := metric.Interval{
+		OldestInclusive: modelStart,
+		NewestInclusive: modelEnd,
+	}
+
+	appender := output.Appender()
+
+	iteratorSlice, err := input.QueryRange(ctx, modelStart, modelEnd, matcher)
+	if err != nil {
+		return fmt.Errorf("error during query: %s", err)
+	}
+
+	metricCount := 0
+	sampleCount := 0
+
+	for _, iterator := range iteratorSlice {
+		metricCount++
+		metric := iterator.Metric().Metric
+		labels := convertMetric(metric)
+
+		samples := iterator.RangeValues(interval)
+		for _, sample := range samples {
+			sampleCount++
+			appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
+		}
+		iterator.Close()
+	}
+
+	if err := appender.Commit(); err != nil {
+		return fmt.Errorf("error during commit: %s", err)
+	}
+
+	log.Printf("TS: %s Metrics: %d Samples: %d", start, metricCount, sampleCount)
+	return nil
 }
 
 func convertMetric(metric model.Metric) labels.Labels {
