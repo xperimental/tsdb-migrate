@@ -145,6 +145,7 @@ func main() {
 		log.Println("Closing TSDB...")
 		db.Close()
 	}()
+	db.DisableCompactions()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -156,6 +157,14 @@ func main() {
 
 	select {
 	case <-done:
+		log.Println("Enabling compactions and final append...")
+		db.EnableCompactions()
+
+		appender := db.Appender()
+		err := appender.Commit()
+		if err != nil {
+			log.Fatalf("Error during final append: %s", err)
+		}
 	case <-term:
 		log.Printf("Caught interrupt. Exiting...")
 	}
