@@ -160,7 +160,16 @@ func main() {
 		log.Println("Enabling compactions and final append...")
 		db.EnableCompactions()
 
+		l := labels.Labels{
+			{
+				Name:  "__name__",
+				Value: "tsdb_migrate_last_run_seconds",
+			},
+		}
+		sort.Sort(l)
+
 		appender := db.Appender()
+		appender.Add(l, time.Now().Unix(), 1)
 		err := appender.Commit()
 		if err != nil {
 			log.Fatalf("Error during final append: %s", err)
