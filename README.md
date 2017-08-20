@@ -24,3 +24,6 @@ Usage of tsdb-migrate:
   -s, --start-time string    Starting time for conversion process. (default "2016-07-18T14:37:00Z")
       --step-time duration   Time slice to use for copying values. (default 24h0m0s)
 ```
+
+- The retention time should match the one on the old storage.
+- Long step times (such as the default) probably only work if you do not have a lot of series (still not tested on a large database).
