@@ -22,5 +22,5 @@ Usage of tsdb-migrate:
   -o, --output string        Directory for new TSDB database.
   -r, --retention duration   Retention time of new database. (default 360h0m0s)
   -s, --start-time string    Starting time for conversion process. (default "2016-07-18T14:37:00Z")
-      --step-time duration   Time slice to use for copying values. (default 1h0m0s)
+      --step-time duration   Time slice to use for copying values. (default 24h0m0s)
 ```

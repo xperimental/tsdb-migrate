@@ -43,7 +43,7 @@ func parseFlags() (migrateConfig, error) {
 		OutputDirectory: "",
 		RetentionTime:   15 * 24 * time.Hour,
 		StartTime:       time.Date(2016, 7, 18, 14, 37, 0, 0, time.UTC),
-		StepTime:        stepTime,
+		StepTime:        24 * time.Hour,
 	}
 
 	startTimeStr := config.StartTime.Format(time.RFC3339)
