@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/tsdb/labels"
+
 	"github.com/prometheus/prometheus/storage/local"
+	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/tsdb"
 	"github.com/spf13/pflag"
 )
@@ -105,4 +112,92 @@ func main() {
 		log.Println("Closing TSDB...")
 		db.Close()
 	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go runConvert(ctx, done, localStorage, db)
+
+	term := make(chan os.Signal)
+	signal.Notify(term, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+
+	select {
+	case <-done:
+	case <-term:
+		log.Printf("Caught interrupt. Exiting...")
+	}
+
+	log.Printf("Shutting down...")
+	cancel()
+}
+
+func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeriesStorage, output *tsdb.DB) {
+	everything, err := metric.NewLabelMatcher(metric.RegexMatch, "__name__", ".+")
+	if err != nil {
+		log.Fatalf("Error creating matcher: %s", err)
+	}
+
+	now := time.Now()
+
+	stepTime := 1 * time.Hour
+
+	timeStamp := time.Unix(0, 0)
+	for {
+		if now.Before(timeStamp) {
+			break
+		}
+
+		startTime := model.TimeFromUnix(timeStamp.Unix())
+		endTime := model.TimeFromUnix(timeStamp.Add(stepTime).Unix())
+		log.Printf("Now at %s - %s", startTime.Time(), endTime.Time())
+
+		interval := metric.Interval{
+			OldestInclusive: startTime,
+			NewestInclusive: endTime,
+		}
+
+		appender := output.Appender()
+
+		iteratorSlice, err := input.QueryRange(ctx, startTime, endTime, everything)
+		if err != nil {
+			log.Fatalf("Error during query: %s", err)
+		}
+
+		metricCount := 0
+		sampleCount := 0
+
+		for _, iterator := range iteratorSlice {
+			metricCount++
+			metric := iterator.Metric().Metric
+			labels := convertMetric(metric)
+
+			samples := iterator.RangeValues(interval)
+			for _, sample := range samples {
+				sampleCount++
+				appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
+			}
+			iterator.Close()
+		}
+
+		if err := appender.Commit(); err != nil {
+			log.Fatalf("Error during commit: %s", err)
+		}
+
+		log.Printf("TS: %s Metrics: %d Samples: %d", timeStamp, metricCount, sampleCount)
+
+		timeStamp = timeStamp.Add(stepTime)
+	}
+
+	done <- struct{}{}
+}
+
+func convertMetric(metric model.Metric) labels.Labels {
+	var result labels.Labels
+	for name, value := range metric {
+		result = append(result, labels.Label{
+			Name:  string(name),
+			Value: string(value),
+		})
+	}
+	return result
 }
