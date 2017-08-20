@@ -233,18 +233,19 @@ func convertRange(ctx context.Context, fprCache map[string]string, start, end ti
 
 		metric := iterator.Metric().Metric
 		labels := convertMetric(metric)
+		fpr := labels.String()
 
 		samples := iterator.RangeValues(interval)
 		for _, sample := range samples {
 			sampleCount++
 
-			ref, ok := fprCache[labels.String()]
+			ref, ok := fprCache[fpr]
 			if ok {
 				switch err := appender.AddFast(ref, int64(sample.Timestamp), float64(sample.Value)); err {
 				case nil:
 				case ErrNotFound:
 					ok = false
-					log.Printf("Ref not found: %s", labels.String())
+					log.Printf("Ref not found: %s", fpr)
 				case ErrOutOfOrderSample, ErrDuplicateSampleForTimestamp, ErrOutOfBounds:
 					log.Printf("Non-fatal error during append: %s", err)
 					continue
@@ -264,7 +265,7 @@ func convertRange(ctx context.Context, fprCache map[string]string, start, end ti
 					return fmt.Errorf("Error adding samples: %s", err)
 				}
 				if len(ref) > 0 {
-					fprCache[labels.String()] = ref
+					fprCache[fpr] = ref
 				}
 			}
 		}
