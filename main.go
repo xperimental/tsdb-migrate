@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -230,12 +231,14 @@ func convertRange(ctx context.Context, start, end time.Time, input *local.Memory
 }
 
 func convertMetric(metric model.Metric) labels.Labels {
-	var result labels.Labels
+	result := make(labels.Labels, 0, len(metric))
 	for name, value := range metric {
 		result = append(result, labels.Label{
 			Name:  string(name),
 			Value: string(value),
 		})
 	}
+
+	sort.Sort(result)
 	return result
 }
