@@ -24,16 +24,29 @@ var (
 )
 
 type migrateConfig struct {
-	RetentionTime   time.Duration
 	InputDirectory  string
 	OutputDirectory string
+	RetentionTime   time.Duration
+	StartTime       time.Time
+	StepTime        time.Duration
 }
 
 func parseFlags() (migrateConfig, error) {
-	var config migrateConfig
-	pflag.StringVarP(&config.InputDirectory, "input", "i", "", "Directory of local storage to convert.")
-	pflag.StringVarP(&config.OutputDirectory, "output", "o", "", "Directory for new TSDB database.")
-	pflag.DurationVarP(&config.RetentionTime, "retention", "r", 15*24*time.Hour, "Retention time of new database.")
+	config := migrateConfig{
+		InputDirectory:  "",
+		OutputDirectory: "",
+		RetentionTime:   15 * 24 * time.Hour,
+		StartTime:       time.Date(2016, 7, 18, 14, 37, 0, 0, time.UTC),
+		StepTime:        stepTime,
+	}
+
+	startTimeStr := config.StartTime.Format(time.RFC3339)
+
+	pflag.StringVarP(&config.InputDirectory, "input", "i", config.InputDirectory, "Directory of local storage to convert.")
+	pflag.StringVarP(&config.OutputDirectory, "output", "o", config.OutputDirectory, "Directory for new TSDB database.")
+	pflag.DurationVarP(&config.RetentionTime, "retention", "r", config.RetentionTime, "Retention time of new database.")
+	pflag.StringVarP(&startTimeStr, "start-time", "s", startTimeStr, "Starting time for conversion process.")
+	pflag.DurationVar(&config.StepTime, "step-time", config.StepTime, "Time slice to use for copying values.")
 	pflag.Parse()
 
 	if err := checkDirectory(config.InputDirectory); err != nil {
@@ -42,6 +55,16 @@ func parseFlags() (migrateConfig, error) {
 
 	if err := checkDirectory(config.OutputDirectory); err != nil {
 		return config, fmt.Errorf("error checking output: %s", err)
+	}
+
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		return config, fmt.Errorf("error parsing start time: %s", err)
+	}
+	config.StartTime = startTime
+
+	if config.StepTime < time.Hour {
+		return config, fmt.Errorf("step too small (min. 1 hour): %s", config.StepTime)
 	}
 
 	return config, nil
@@ -120,7 +143,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan struct{})
-	go runConvert(ctx, done, localStorage, db)
+	go runConvert(ctx, done, localStorage, db, config.StartTime, config.StepTime)
 
 	term := make(chan os.Signal)
 	signal.Notify(term, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
@@ -129,13 +152,13 @@ func main() {
 	case <-done:
 	case <-term:
 		log.Printf("Caught interrupt. Exiting...")
-		cancel()
 	}
 
 	log.Printf("Shutting down...")
+	cancel()
 }
 
-func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeriesStorage, output *tsdb.DB) {
+func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeriesStorage, output *tsdb.DB, start time.Time, step time.Duration) {
 	everything, err := metric.NewLabelMatcher(metric.RegexMatch, "__name__", ".+")
 	if err != nil {
 		log.Fatalf("Error creating matcher: %s", err)
@@ -143,17 +166,13 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 
 	now := time.Now()
 
-	timeStamp, err := findStart(ctx, input, everything)
-	if err != nil {
-		log.Fatalf("Error finding start: %s", err)
-	}
-
+	timeStamp := start
 	for ctx.Err() == nil {
 		if now.Before(timeStamp) {
 			break
 		}
 
-		end := timeStamp.Add(stepTime)
+		end := timeStamp.Add(step)
 
 		if err := convertRange(ctx, timeStamp, end, input, output, everything); err != nil {
 			log.Fatalf("Error converting range: %s", err)
@@ -163,12 +182,6 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 	}
 
 	done <- struct{}{}
-}
-
-func findStart(ctx context.Context, input *local.MemorySeriesStorage, matcher *metric.LabelMatcher) (time.Time, error) {
-	start := time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	return start, nil
 }
 
 func convertRange(ctx context.Context, start, end time.Time, input *local.MemorySeriesStorage, output *tsdb.DB, matcher *metric.LabelMatcher) error {
