@@ -130,7 +130,7 @@ func main() {
 	}()
 
 	tsdbOpts := &tsdb.Options{
-		WALFlushInterval:  time.Second * 30,
+		WALFlushInterval:  5 * time.Minute,
 		RetentionDuration: uint64(config.RetentionTime.Seconds() * 1000),
 		BlockRanges:       tsdb.ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
 		NoLockfile:        false,
@@ -145,7 +145,6 @@ func main() {
 		log.Println("Closing TSDB...")
 		db.Close()
 	}()
-	db.DisableCompactions()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -157,23 +156,6 @@ func main() {
 
 	select {
 	case <-done:
-		log.Println("Enabling compactions and final append...")
-		db.EnableCompactions()
-
-		l := labels.Labels{
-			{
-				Name:  "__name__",
-				Value: "tsdb_migrate_last_run_seconds",
-			},
-		}
-		sort.Sort(l)
-
-		appender := db.Appender()
-		appender.Add(l, time.Now().Unix(), 1)
-		err := appender.Commit()
-		if err != nil {
-			log.Fatalf("Error during final append: %s", err)
-		}
 	case <-term:
 		log.Printf("Caught interrupt. Exiting...")
 	}
