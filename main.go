@@ -205,13 +205,18 @@ func convertRange(ctx context.Context, start, end time.Time, input *local.Memory
 
 	for _, iterator := range iteratorSlice {
 		metricCount++
+
 		metric := iterator.Metric().Metric
 		labels := convertMetric(metric)
 
 		samples := iterator.RangeValues(interval)
 		for _, sample := range samples {
 			sampleCount++
-			appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
+
+			_, err = appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
+			if err != nil {
+				log.Printf("Error adding samples: %s", err)
+			}
 		}
 		iterator.Close()
 	}
