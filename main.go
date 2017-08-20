@@ -22,6 +22,11 @@ import (
 
 var (
 	stepTime = 1 * time.Hour
+
+	ErrNotFound                    = errors.New("not found")
+	ErrOutOfOrderSample            = errors.New("out of order sample")
+	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
+	ErrOutOfBounds                 = errors.New("out of bounds")
 )
 
 type migrateConfig struct {
@@ -166,6 +171,7 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 	}
 
 	now := time.Now()
+	fprCache := make(map[string]string)
 
 	timeStamp := start
 	for ctx.Err() == nil {
@@ -175,7 +181,7 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 
 		end := timeStamp.Add(step)
 
-		if err := convertRange(ctx, timeStamp, end, input, output, everything); err != nil {
+		if err := convertRange(ctx, fprCache, timeStamp, end, input, output, everything); err != nil {
 			log.Fatalf("Error converting range: %s", err)
 		}
 
@@ -185,7 +191,7 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 	done <- struct{}{}
 }
 
-func convertRange(ctx context.Context, start, end time.Time, input *local.MemorySeriesStorage, output *tsdb.DB, matcher *metric.LabelMatcher) error {
+func convertRange(ctx context.Context, fprCache map[string]string, start, end time.Time, input *local.MemorySeriesStorage, output *tsdb.DB, matcher *metric.LabelMatcher) error {
 	modelStart := model.TimeFromUnix(start.Unix())
 	modelEnd := model.TimeFromUnix(end.Unix())
 
@@ -214,9 +220,34 @@ func convertRange(ctx context.Context, start, end time.Time, input *local.Memory
 		for _, sample := range samples {
 			sampleCount++
 
-			_, err = appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
-			if err != nil {
-				log.Printf("Error adding samples: %s", err)
+			ref, ok := fprCache[labels.String()]
+			if ok {
+				switch err := appender.AddFast(ref, int64(sample.Timestamp), float64(sample.Value)); err {
+				case nil:
+				case ErrNotFound:
+					ok = false
+					log.Printf("Ref not found: %s", labels.String())
+				case ErrOutOfOrderSample, ErrDuplicateSampleForTimestamp, ErrOutOfBounds:
+					log.Printf("Non-fatal error during append: %s", err)
+					continue
+				default:
+					return fmt.Errorf("Error adding samples by ref: %s", err)
+				}
+			}
+
+			if !ok {
+				ref, err = appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
+				switch err {
+				case nil:
+				case ErrOutOfOrderSample, ErrDuplicateSampleForTimestamp, ErrOutOfBounds:
+					log.Printf("Non-fatal error during append: %s", err)
+					continue
+				default:
+					return fmt.Errorf("Error adding samples: %s", err)
+				}
+				if len(ref) > 0 {
+					fprCache[labels.String()] = ref
+				}
 			}
 		}
 		iterator.Close()
