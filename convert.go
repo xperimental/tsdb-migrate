@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/tsdb"
 	"github.com/prometheus/tsdb/labels"
-	"github.com/xperimental/tsdb-migrate/tsdberr"
 )
 
 var stepTime = 1 * time.Hour
@@ -78,10 +77,10 @@ func convertRange(ctx context.Context, fprCache map[string]string, start, end ti
 			if ok {
 				switch err := appender.AddFast(ref, int64(sample.Timestamp), float64(sample.Value)); err {
 				case nil:
-				case tsdberr.ErrNotFound:
+				case tsdb.ErrNotFound:
 					ok = false
 					log.Printf("Ref not found: %s", fpr)
-				case tsdberr.ErrOutOfOrderSample, tsdberr.ErrDuplicateSampleForTimestamp, tsdberr.ErrOutOfBounds:
+				case tsdb.ErrOutOfOrderSample, tsdb.ErrOutOfBounds:
 					log.Printf("Non-fatal error during append: %s", err)
 					continue
 				default:
@@ -93,7 +92,7 @@ func convertRange(ctx context.Context, fprCache map[string]string, start, end ti
 				ref, err = appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
 				switch err {
 				case nil:
-				case tsdberr.ErrOutOfOrderSample, tsdberr.ErrDuplicateSampleForTimestamp, tsdberr.ErrOutOfBounds:
+				case tsdb.ErrOutOfOrderSample, tsdb.ErrOutOfBounds:
 					log.Printf("Non-fatal error during append: %s", err)
 					continue
 				default:
