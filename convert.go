@@ -23,7 +23,6 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 	}
 
 	now := time.Now()
-	fprCache := make(map[string]string)
 
 	timeStamp := start
 	for ctx.Err() == nil {
@@ -33,7 +32,7 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 
 		end := timeStamp.Add(step)
 
-		if err := convertRange(ctx, fprCache, timeStamp, end, input, output, everything); err != nil {
+		if err := convertRange(ctx, timeStamp, end, input, output, everything); err != nil {
 			log.Fatalf("Error converting range: %s", err)
 		}
 
@@ -43,7 +42,7 @@ func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeri
 	done <- struct{}{}
 }
 
-func convertRange(ctx context.Context, fprCache map[string]string, start, end time.Time, input *local.MemorySeriesStorage, output *tsdb.DB, matcher *metric.LabelMatcher) error {
+func convertRange(ctx context.Context, start, end time.Time, input *local.MemorySeriesStorage, output *tsdb.DB, matcher *metric.LabelMatcher) error {
 	modelStart := model.TimeFromUnix(start.Unix())
 	modelEnd := model.TimeFromUnix(end.Unix())
 
@@ -67,40 +66,19 @@ func convertRange(ctx context.Context, fprCache map[string]string, start, end ti
 
 		metric := iterator.Metric().Metric
 		labels := convertMetric(metric)
-		fpr := labels.String()
 
 		samples := iterator.RangeValues(interval)
 		for _, sample := range samples {
 			sampleCount++
 
-			ref, ok := fprCache[fpr]
-			if ok {
-				switch err := appender.AddFast(ref, int64(sample.Timestamp), float64(sample.Value)); err {
-				case nil:
-				case tsdb.ErrNotFound:
-					ok = false
-					log.Printf("Ref not found: %s", fpr)
-				case tsdb.ErrOutOfOrderSample, tsdb.ErrOutOfBounds:
-					log.Printf("Non-fatal error during append: %s", err)
-					continue
-				default:
-					return fmt.Errorf("Error adding samples by ref: %s", err)
-				}
-			}
-
-			if !ok {
-				ref, err = appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
-				switch err {
-				case nil:
-				case tsdb.ErrOutOfOrderSample, tsdb.ErrOutOfBounds:
-					log.Printf("Non-fatal error during append: %s", err)
-					continue
-				default:
-					return fmt.Errorf("Error adding samples: %s", err)
-				}
-				if len(ref) > 0 {
-					fprCache[fpr] = ref
-				}
+			_, err = appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
+			switch err {
+			case nil:
+			case tsdb.ErrOutOfOrderSample, tsdb.ErrOutOfBounds:
+				log.Printf("Non-fatal error during append: %s", err)
+				continue
+			default:
+				return fmt.Errorf("Error adding samples: %s", err)
 			}
 		}
 		iterator.Close()
