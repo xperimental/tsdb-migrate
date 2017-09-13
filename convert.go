@@ -2,105 +2,40 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"sort"
-	"time"
 
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage/local"
-	"github.com/prometheus/prometheus/storage/metric"
-	"github.com/prometheus/tsdb"
-	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/storage/local/codable"
+
+	"github.com/prometheus/prometheus/storage/local/index"
 )
 
-var stepTime = 1 * time.Hour
-
-func runConvert(ctx context.Context, done chan struct{}, input *local.MemorySeriesStorage, output *tsdb.DB, start time.Time, step time.Duration) {
-	everything, err := metric.NewLabelMatcher(metric.RegexMatch, "__name__", ".+")
+func runInput(ctx context.Context, inputDir string) (chan string, error) {
+	metricsIndex, err := index.NewFingerprintMetricIndex(inputDir)
 	if err != nil {
-		log.Fatalf("Error creating matcher: %s", err)
+		log.Printf("Error opening index: %s", err)
+		return nil, err
 	}
 
-	now := time.Now()
+	ch := make(chan string)
+	go func() {
+		defer close(ch)
 
-	timeStamp := start
-	for ctx.Err() == nil {
-		if now.Before(timeStamp) {
-			break
-		}
-
-		end := timeStamp.Add(step)
-
-		if err := convertRange(ctx, timeStamp, end, input, output, everything); err != nil {
-			log.Fatalf("Error converting range: %s", err)
-		}
-
-		timeStamp = end
-	}
-
-	done <- struct{}{}
-}
-
-func convertRange(ctx context.Context, start, end time.Time, input *local.MemorySeriesStorage, output *tsdb.DB, matcher *metric.LabelMatcher) error {
-	modelStart := model.TimeFromUnix(start.Unix())
-	modelEnd := model.TimeFromUnix(end.Unix())
-
-	interval := metric.Interval{
-		OldestInclusive: modelStart,
-		NewestInclusive: modelEnd,
-	}
-
-	appender := output.Appender()
-
-	iteratorSlice, err := input.QueryRange(ctx, modelStart, modelEnd, matcher)
-	if err != nil {
-		return fmt.Errorf("error during query: %s", err)
-	}
-
-	metricCount := 0
-	sampleCount := 0
-
-	for _, iterator := range iteratorSlice {
-		metricCount++
-
-		metric := iterator.Metric().Metric
-		labels := convertMetric(metric)
-
-		samples := iterator.RangeValues(interval)
-		for _, sample := range samples {
-			sampleCount++
-
-			_, err = appender.Add(labels, int64(sample.Timestamp), float64(sample.Value))
-			switch err {
-			case nil:
-			case tsdb.ErrOutOfOrderSample, tsdb.ErrOutOfBounds:
-				log.Printf("Non-fatal error during append: %s", err)
-				continue
-			default:
-				return fmt.Errorf("Error adding samples: %s", err)
+		var fpr codable.Fingerprint
+		var mtr codable.Metric
+		metricsIndex.ForEach(func(kv index.KeyValueAccessor) error {
+			if err := kv.Key(&fpr); err != nil {
+				log.Printf("Error decoding key: %s", err)
+				return err
 			}
-		}
-		iterator.Close()
-	}
 
-	if err := appender.Commit(); err != nil {
-		return fmt.Errorf("error during commit: %s", err)
-	}
+			if err := kv.Value(&mtr); err != nil {
+				log.Printf("Error decoding value: %s", err)
+				return err
+			}
 
-	log.Printf("TS: %s Metrics: %d Samples: %d", start, metricCount, sampleCount)
-	return nil
-}
-
-func convertMetric(metric model.Metric) labels.Labels {
-	result := make(labels.Labels, 0, len(metric))
-	for name, value := range metric {
-		result = append(result, labels.Label{
-			Name:  string(name),
-			Value: string(value),
+			log.Printf("%d -> %s", fpr, mtr)
+			return nil
 		})
-	}
-
-	sort.Sort(result)
-	return result
+	}()
+	return ch, nil
 }
