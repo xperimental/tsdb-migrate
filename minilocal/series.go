@@ -7,8 +7,10 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+// SeriesMap maps a fingerprint to a timeseries.
 type SeriesMap map[model.Fingerprint]Series
 
+// LoadSeriesMap loads the series from the heads file.
 func LoadSeriesMap(inputDir string) (SeriesMap, error) {
 	seriesMap := make(SeriesMap)
 

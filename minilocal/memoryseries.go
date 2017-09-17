@@ -58,7 +58,8 @@ type memorySeries struct {
 type Series interface {
 	Metric() model.Metric
 	Descs() []*chunk.Desc
-	AllInMemory() bool
+	First() model.Time
+	Last() model.Time
 }
 
 func (m *memorySeries) Metric() model.Metric {
@@ -69,6 +70,10 @@ func (m *memorySeries) Descs() []*chunk.Desc {
 	return m.chunkDescs
 }
 
-func (m *memorySeries) AllInMemory() bool {
-	return m.chunkDescsOffset == 0
+func (m *memorySeries) First() model.Time {
+	return m.savedFirstTime
+}
+
+func (m *memorySeries) Last() model.Time {
+	return m.lastTime
 }
