@@ -3,8 +3,10 @@ package minilocal
 import (
 	"log"
 	"path/filepath"
+	"sort"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/tsdb/labels"
 )
 
 // SeriesMap maps a fingerprint to a timeseries.
@@ -29,4 +31,17 @@ func LoadSeriesMap(inputDir string) (SeriesMap, error) {
 
 	log.Printf("%d series loaded.", len(heads))
 	return seriesMap, nil
+}
+
+func ConvertMetric(metric model.Metric) labels.Labels {
+	result := make(labels.Labels, 0, len(metric))
+	for name, value := range metric {
+		result = append(result, labels.Label{
+			Name:  string(name),
+			Value: string(value),
+		})
+	}
+
+	sort.Sort(result)
+	return result
 }

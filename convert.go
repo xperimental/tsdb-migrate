@@ -17,8 +17,14 @@ type seriesTime struct {
 
 var timeStep model.Time = 60 * 1000
 
-func runInput(ctx context.Context, inputDir string) (chan string, error) {
-	ch := make(chan string)
+type metricSample struct {
+	Metric model.Metric
+	Time   model.Time
+	Value  float64
+}
+
+func runInput(ctx context.Context, inputDir string) (chan metricSample, error) {
+	ch := make(chan metricSample)
 	go func() {
 		defer close(ch)
 
@@ -29,6 +35,37 @@ func runInput(ctx context.Context, inputDir string) (chan string, error) {
 		}
 
 		timeSortedFingerprints := sortedFingerprints(seriesMap)
+
+		for _, seriesInfo := range timeSortedFingerprints {
+			series := seriesMap[seriesInfo.Fingerprint]
+			metric := series.Metric()
+
+			log.Printf("Series: %s", metric)
+
+			chunks, err := minilocal.ReadChunks(inputDir, seriesInfo.Fingerprint)
+			if err != nil {
+				log.Printf("Error opening chunk file: %s", err)
+				continue
+			}
+
+			for _, chunk := range chunks {
+				iterator := chunk.NewIterator()
+
+				for iterator.Scan() {
+					sample := iterator.Value()
+					ch <- metricSample{
+						Metric: metric,
+						Time:   sample.Timestamp,
+						Value:  float64(sample.Value),
+					}
+				}
+
+				if iterator.Err() != nil {
+					log.Printf("Error reading chunk: %s", iterator.Err())
+					continue
+				}
+			}
+		}
 	}()
 	return ch, nil
 }
