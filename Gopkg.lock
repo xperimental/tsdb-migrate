@@ -28,8 +28,8 @@
 [[projects]]
   name = "github.com/coreos/etcd"
   packages = ["pkg/fileutil"]
-  revision = "d0d1a87aa96ae14914751d42264262cb69eda170"
-  version = "v3.2.5"
+  revision = "bb66589f8cf18960c7f3d56b1b83753caeed9c7a"
+  version = "v3.2.7"
 
 [[projects]]
   name = "github.com/coreos/go-systemd"
@@ -71,7 +71,7 @@
   branch = "master"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
-  revision = "ab9f9a6dab164b7d1246e0e688b0ab7b94d8553e"
+  revision = "11b8df160996e00fd4b55cbaafb3d84ec6d50fa8"
 
 [[projects]]
   branch = "master"
@@ -131,7 +131,7 @@
   branch = "master"
   name = "github.com/prometheus/common"
   packages = ["expfmt","internal/bitbucket.org/ww/goautoneg","log","model"]
-  revision = "61f87aac8082fa8c3c5655c7608d7478d46ac2ad"
+  revision = "2f17f4a9d485bf34b4bfaccc273805040e4f86c8"
 
 [[projects]]
   branch = "master"
@@ -149,7 +149,7 @@
   branch = "master"
   name = "github.com/prometheus/tsdb"
   packages = [".","chunks","labels"]
-  revision = "c4ca881685ae1266a75caf57da46d8b6934213c0"
+  revision = "643563068b778c498d369dd2fa00f6169e17890b"
 
 [[projects]]
   name = "github.com/sirupsen/logrus"
@@ -173,13 +173,13 @@
   branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
-  revision = "eb71ad9bd329b5ac0fd0148dd99bd62e8be8e035"
+  revision = "7d9177d70076375b9a59c8fde23d52d9c4a7ecd5"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = ["context"]
-  revision = "1c05540f6879653db88113bc4a2b70aec4bd491f"
+  revision = "8351a756f30f1297fe94bbf4b767ec589c6ea6d0"
 
 [[projects]]
   branch = "master"
@@ -191,7 +191,7 @@
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix","windows","windows/registry","windows/svc/eventlog"]
-  revision = "43e60d72a8e2bd92ee98319ba9a384a0e9837c08"
+  revision = "062cd7e4e68206d8bab9b18396626e855c992658"
 
 [[projects]]
   name = "gopkg.in/alecthomas/kingpin.v2"
