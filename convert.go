@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"reflect"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -91,6 +92,7 @@ func groupByTime(series []seriesTime) []*timeGroup {
 	}
 
 	for i := 1; i < len(series); i++ {
+		log.Printf("%d of %d series -> %d groups", i, len(series), len(groups))
 		s := series[i]
 
 		// Start after last group -> new group
@@ -110,7 +112,7 @@ func groupByTime(series []seriesTime) []*timeGroup {
 			g.Fingerprints = append(g.Fingerprints, s.Fingerprint)
 		}
 
-		groups = append(before, append(including, after...)...)
+		groups = combineGroups(before, including, after)
 	}
 
 	return groups
@@ -265,6 +267,60 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 				To:           g.To,
 				Fingerprints: g.Fingerprints,
 			})
+		case g.From > from && g.From == to && g.To > from && g.To > to:
+			// from {-} to
+			//      g {-}
+			//      {i}{a}
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: []model.Fingerprint{},
+			})
+			after = append(after, &timeGroup{
+				From:         g.From,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			})
+		case g.From < from && g.From < to && g.To == from && g.To < to:
+			// from {-} to
+			//  g {-}
+			//    {b}{i}
+			before = append(before, &timeGroup{
+				From:         g.From,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			})
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: []model.Fingerprint{},
+			})
+		case g.From > from && g.From == to && g.To > from && g.To == to:
+			// from {-} to
+			//      g |
+			//      {i}{i}
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: []model.Fingerprint{},
+			}, &timeGroup{
+				From:         g.From,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			})
+		case g.From == from && g.From < to && g.To == from && g.To < to:
+			// from {-} to
+			//    g |
+			//    {i}{i}
+			including = append(including, &timeGroup{
+				From:         g.From,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			}, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: []model.Fingerprint{},
+			})
 		case g.From == from && g.To == to:
 			including = append(including, &timeGroup{
 				From:         from,
@@ -272,9 +328,42 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 				Fingerprints: g.Fingerprints,
 			})
 		default:
-			log.Printf("gf: %d gt: %d from: %d to: %d", g.From, g.To, from, to)
+			log.Fatalf("gf: %d gt: %d from: %d to: %d", g.From, g.To, from, to)
 		}
 	}
 
 	return before, including, after
+}
+
+func combineGroups(groupGroups ...[]*timeGroup) []*timeGroup {
+	if len(groupGroups) == 0 {
+		return []*timeGroup{}
+	}
+
+	result := []*timeGroup{}
+	var last *timeGroup
+	for _, group := range groupGroups {
+		if len(group) == 0 {
+			continue
+		}
+
+		for _, g := range group {
+			if last == nil {
+				last = g
+				continue
+			}
+
+			if reflect.DeepEqual(last.Fingerprints, g.Fingerprints) {
+				last.To = g.To
+			} else {
+				result = append(result, last)
+				last = g
+			}
+		}
+	}
+
+	if last != nil {
+		result = append(result, last)
+	}
+	return result
 }
