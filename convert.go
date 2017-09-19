@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
 
@@ -15,7 +16,15 @@ type seriesTime struct {
 	To          model.Time
 }
 
-var timeStep model.Time = 60 * 1000
+type timeGroup struct {
+	From         model.Time
+	To           model.Time
+	Fingerprints []model.Fingerprint
+}
+
+func (g *timeGroup) String() string {
+	return fmt.Sprintf("(%d, %d, %s)", g.From, g.To, g.Fingerprints)
+}
 
 type metricSample struct {
 	Metric model.Metric
@@ -35,36 +44,10 @@ func runInput(ctx context.Context, inputDir string) (chan metricSample, error) {
 		}
 
 		timeSortedFingerprints := sortedFingerprints(seriesMap)
+		groupedByTime := groupByTime(timeSortedFingerprints)
 
-		for _, seriesInfo := range timeSortedFingerprints {
-			series := seriesMap[seriesInfo.Fingerprint]
-			metric := series.Metric()
-
-			log.Printf("Series: %s", metric)
-
-			chunks, err := minilocal.ReadChunks(inputDir, seriesInfo.Fingerprint)
-			if err != nil {
-				log.Printf("Error opening chunk file: %s", err)
-				continue
-			}
-
-			for _, chunk := range chunks {
-				iterator := chunk.NewIterator()
-
-				for iterator.Scan() {
-					sample := iterator.Value()
-					ch <- metricSample{
-						Metric: metric,
-						Time:   sample.Timestamp,
-						Value:  float64(sample.Value),
-					}
-				}
-
-				if iterator.Err() != nil {
-					log.Printf("Error reading chunk: %s", iterator.Err())
-					continue
-				}
-			}
+		for i, group := range groupedByTime {
+			fmt.Printf("%d -> %#v", i, group)
 		}
 	}()
 	return ch, nil
@@ -92,4 +75,206 @@ func sortedFingerprints(seriesMap minilocal.SeriesMap) []seriesTime {
 	})
 
 	return fingerprints
+}
+
+func groupByTime(series []seriesTime) []*timeGroup {
+	if len(series) == 0 {
+		return []*timeGroup{}
+	}
+
+	groups := []*timeGroup{
+		{
+			From:         series[0].From,
+			To:           series[0].To,
+			Fingerprints: []model.Fingerprint{series[0].Fingerprint},
+		},
+	}
+
+	for i := 1; i < len(series); i++ {
+		s := series[i]
+
+		// Start after last group -> new group
+		if s.From > groups[len(groups)-1].To {
+			groups = append(groups, &timeGroup{
+				From:         s.From,
+				To:           s.To,
+				Fingerprints: []model.Fingerprint{s.Fingerprint},
+			})
+
+			continue
+		}
+
+		before, including, after := findGroups(groups, s.From, s.To)
+
+		for _, g := range including {
+			g.Fingerprints = append(g.Fingerprints, s.Fingerprint)
+		}
+
+		groups = append(before, append(including, after...)...)
+	}
+
+	return groups
+}
+
+func findGroups(groups []*timeGroup, from, to model.Time) (before, including, after []*timeGroup) {
+	before = []*timeGroup{}
+	including = []*timeGroup{}
+	after = []*timeGroup{}
+
+	for i, g := range groups {
+		if g.To < from {
+			// Group is before timeslice
+			before = append(before, g)
+			continue
+		}
+
+		if g.From > to {
+			// Group is after timeslice, so following are as well
+			after = groups[i:]
+			break
+		}
+
+		switch {
+		case g.From < from && g.From < to && g.To > from && g.To < to:
+			// from  {----} to
+			// g  {----}
+			//    {b}{i}{i}
+			before = append(before, &timeGroup{
+				From:         g.From,
+				To:           from,
+				Fingerprints: g.Fingerprints,
+			})
+
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			}, &timeGroup{
+				From:         g.To,
+				To:           to,
+				Fingerprints: []model.Fingerprint{},
+			})
+		case g.From > from && g.From < to && g.To > from && g.To < to:
+			// from {-------} to
+			//       g {-}
+			//      {i}{i}{i}
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           g.From,
+				Fingerprints: []model.Fingerprint{},
+			}, &timeGroup{
+				From:         g.From,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			}, &timeGroup{
+				From:         g.To,
+				To:           to,
+				Fingerprints: []model.Fingerprint{},
+			})
+		case g.From > from && g.From < to && g.To > from && g.To > to:
+			// from {----} to
+			//       g {----}
+			//      {i}{i}{a}
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           g.From,
+				Fingerprints: []model.Fingerprint{},
+			}, &timeGroup{
+				From:         g.From,
+				To:           to,
+				Fingerprints: g.Fingerprints,
+			})
+
+			after = append(after, &timeGroup{
+				From:         to,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			})
+		case g.From == from && g.From < to && g.To > from && g.To < to:
+			// from {----} to
+			//    g {-}
+			//      {i}{i}
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			}, &timeGroup{
+				From:         g.To,
+				To:           to,
+				Fingerprints: []model.Fingerprint{},
+			})
+		case g.From > from && g.From < to && g.To > from && g.To == to:
+			// from {----} to
+			//       g {-}
+			//      {i}{i}
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           g.From,
+				Fingerprints: []model.Fingerprint{},
+			}, &timeGroup{
+				From:         g.From,
+				To:           to,
+				Fingerprints: g.Fingerprints,
+			})
+		case g.From == from && g.From < to && g.To > from && g.To > to:
+			// from {---} to
+			//    g {------}
+			//      {-i-}{a}
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: g.Fingerprints,
+			})
+
+			after = append(after, &timeGroup{
+				From:         to,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			})
+		case g.From < from && g.From < to && g.To > from && g.To == to:
+			// from {---} to
+			// g {------}
+			//   {b}{-i-}
+			before = append(before, &timeGroup{
+				From:         g.From,
+				To:           from,
+				Fingerprints: g.Fingerprints,
+			})
+
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: g.Fingerprints,
+			})
+		case g.From < from && g.From < to && g.To > from && g.To > to:
+			// from {-} to
+			// g {-------}
+			//   {b}{i}{a}
+			before = append(before, &timeGroup{
+				From:         g.From,
+				To:           from,
+				Fingerprints: g.Fingerprints,
+			})
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: g.Fingerprints,
+			})
+			after = append(after, &timeGroup{
+				From:         to,
+				To:           g.To,
+				Fingerprints: g.Fingerprints,
+			})
+		case g.From == from && g.To == to:
+			including = append(including, &timeGroup{
+				From:         from,
+				To:           to,
+				Fingerprints: g.Fingerprints,
+			})
+		default:
+			log.Printf("gf: %d gt: %d from: %d to: %d", g.From, g.To, from, to)
+		}
+	}
+
+	return before, including, after
 }
