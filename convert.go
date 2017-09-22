@@ -366,15 +366,33 @@ func combineGroups(groupGroups ...[]*timeGroup) []*timeGroup {
 			continue
 		}
 
+		sort.Slice(group, func(i, j int) bool {
+			itemI := group[i]
+			itemJ := group[j]
+
+			if itemI.From == itemJ.From {
+				return itemI.To < itemJ.To
+			}
+
+			return itemI.From < itemJ.From
+		})
+
 		for _, g := range group {
 			if last == nil {
 				last = g
 				continue
 			}
 
-			if reflect.DeepEqual(last.Fingerprints, g.Fingerprints) {
+			switch {
+			case len(g.Fingerprints) == 0:
+				continue
+			case reflect.DeepEqual(last.Fingerprints, g.Fingerprints):
 				last.To = g.To
-			} else {
+			case last.From == g.From && last.To == g.To:
+				for k := range g.Fingerprints {
+					last.Fingerprints[k] = true
+				}
+			default:
 				result = append(result, last)
 				last = g
 			}
