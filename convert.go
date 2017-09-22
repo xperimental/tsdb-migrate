@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -17,14 +18,28 @@ type seriesTime struct {
 	To          model.Time
 }
 
+type fingerprintMap map[model.Fingerprint]bool
+
+func (m fingerprintMap) Copy() fingerprintMap {
+	copy := make(fingerprintMap)
+	for k := range m {
+		copy[k] = true
+	}
+	return copy
+}
+
 type timeGroup struct {
 	From         model.Time
 	To           model.Time
-	Fingerprints []model.Fingerprint
+	Fingerprints fingerprintMap
 }
 
 func (g *timeGroup) String() string {
-	return fmt.Sprintf("(%d, %d, %s)", g.From, g.To, g.Fingerprints)
+	fingerprints := &bytes.Buffer{}
+	for f := range g.Fingerprints {
+		fmt.Fprintf(fingerprints, "%s ", f)
+	}
+	return fmt.Sprintf("(%d, %d, %s)", g.From, g.To, fingerprints)
 }
 
 type metricSample struct {
@@ -85,9 +100,11 @@ func groupByTime(series []seriesTime) []*timeGroup {
 
 	groups := []*timeGroup{
 		{
-			From:         series[0].From,
-			To:           series[0].To,
-			Fingerprints: []model.Fingerprint{series[0].Fingerprint},
+			From: series[0].From,
+			To:   series[0].To,
+			Fingerprints: map[model.Fingerprint]bool{
+				series[0].Fingerprint: true,
+			},
 		},
 	}
 
@@ -98,9 +115,11 @@ func groupByTime(series []seriesTime) []*timeGroup {
 		// Start after last group -> new group
 		if s.From > groups[len(groups)-1].To {
 			groups = append(groups, &timeGroup{
-				From:         s.From,
-				To:           s.To,
-				Fingerprints: []model.Fingerprint{s.Fingerprint},
+				From: s.From,
+				To:   s.To,
+				Fingerprints: map[model.Fingerprint]bool{
+					s.Fingerprint: true,
+				},
 			})
 
 			continue
@@ -109,7 +128,7 @@ func groupByTime(series []seriesTime) []*timeGroup {
 		before, including, after := findGroups(groups, s.From, s.To)
 
 		for _, g := range including {
-			g.Fingerprints = append(g.Fingerprints, s.Fingerprint)
+			g.Fingerprints[s.Fingerprint] = true
 		}
 
 		groups = combineGroups(before, including, after)
@@ -144,17 +163,17 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			before = append(before, &timeGroup{
 				From:         g.From,
 				To:           from,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			}, &timeGroup{
 				From:         g.To,
 				To:           to,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			})
 		case g.From > from && g.From < to && g.To > from && g.To < to:
 			// from {-------} to
@@ -163,15 +182,15 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           g.From,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			}, &timeGroup{
 				From:         g.From,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			}, &timeGroup{
 				From:         g.To,
 				To:           to,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			})
 		case g.From > from && g.From < to && g.To > from && g.To > to:
 			// from {----} to
@@ -180,17 +199,17 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           g.From,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			}, &timeGroup{
 				From:         g.From,
 				To:           to,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 
 			after = append(after, &timeGroup{
 				From:         to,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		case g.From == from && g.From < to && g.To > from && g.To < to:
 			// from {----} to
@@ -199,11 +218,11 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			}, &timeGroup{
 				From:         g.To,
 				To:           to,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			})
 		case g.From > from && g.From < to && g.To > from && g.To == to:
 			// from {----} to
@@ -212,11 +231,11 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           g.From,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			}, &timeGroup{
 				From:         g.From,
 				To:           to,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		case g.From == from && g.From < to && g.To > from && g.To > to:
 			// from {---} to
@@ -225,13 +244,13 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 
 			after = append(after, &timeGroup{
 				From:         to,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		case g.From < from && g.From < to && g.To > from && g.To == to:
 			// from {---} to
@@ -240,13 +259,13 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			before = append(before, &timeGroup{
 				From:         g.From,
 				To:           from,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		case g.From < from && g.From < to && g.To > from && g.To > to:
 			// from {-} to
@@ -255,17 +274,17 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			before = append(before, &timeGroup{
 				From:         g.From,
 				To:           from,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 			after = append(after, &timeGroup{
 				From:         to,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		case g.From > from && g.From == to && g.To > from && g.To > to:
 			// from {-} to
@@ -274,12 +293,12 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			})
 			after = append(after, &timeGroup{
 				From:         g.From,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		case g.From < from && g.From < to && g.To == from && g.To < to:
 			// from {-} to
@@ -288,12 +307,12 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			before = append(before, &timeGroup{
 				From:         g.From,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			})
 		case g.From > from && g.From == to && g.To > from && g.To == to:
 			// from {-} to
@@ -302,11 +321,11 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			}, &timeGroup{
 				From:         g.From,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		case g.From == from && g.From < to && g.To == from && g.To < to:
 			// from {-} to
@@ -315,17 +334,17 @@ func findGroups(groups []*timeGroup, from, to model.Time) (before, including, af
 			including = append(including, &timeGroup{
 				From:         g.From,
 				To:           g.To,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			}, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: []model.Fingerprint{},
+				Fingerprints: make(map[model.Fingerprint]bool),
 			})
 		case g.From == from && g.To == to:
 			including = append(including, &timeGroup{
 				From:         from,
 				To:           to,
-				Fingerprints: g.Fingerprints,
+				Fingerprints: g.Fingerprints.Copy(),
 			})
 		default:
 			log.Fatalf("gf: %d gt: %d from: %d to: %d", g.From, g.To, from, to)

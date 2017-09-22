@@ -31,8 +31,8 @@ func TestGroupByTime(t *testing.T) {
 				&timeGroup{
 					From: 0,
 					To:   1,
-					Fingerprints: []model.Fingerprint{
-						0,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
 					},
 				},
 			},
@@ -55,15 +55,15 @@ func TestGroupByTime(t *testing.T) {
 				&timeGroup{
 					From: 0,
 					To:   1,
-					Fingerprints: []model.Fingerprint{
-						0,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
 					},
 				},
 				&timeGroup{
 					From: 2,
 					To:   3,
-					Fingerprints: []model.Fingerprint{
-						1,
+					Fingerprints: map[model.Fingerprint]bool{
+						1: true,
 					},
 				},
 			},
@@ -86,9 +86,9 @@ func TestGroupByTime(t *testing.T) {
 				&timeGroup{
 					From: 0,
 					To:   1,
-					Fingerprints: []model.Fingerprint{
-						0,
-						1,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
+						1: true,
 					},
 				},
 			},
@@ -111,23 +111,23 @@ func TestGroupByTime(t *testing.T) {
 				&timeGroup{
 					From: 0,
 					To:   1,
-					Fingerprints: []model.Fingerprint{
-						0,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
 					},
 				},
 				&timeGroup{
 					From: 1,
 					To:   2,
-					Fingerprints: []model.Fingerprint{
-						0,
-						1,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
+						1: true,
 					},
 				},
 				&timeGroup{
 					From: 2,
 					To:   3,
-					Fingerprints: []model.Fingerprint{
-						0,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
 					},
 				},
 			},
@@ -150,16 +150,16 @@ func TestGroupByTime(t *testing.T) {
 				&timeGroup{
 					From: 0,
 					To:   2,
-					Fingerprints: []model.Fingerprint{
-						0,
-						1,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
+						1: true,
 					},
 				},
 				&timeGroup{
 					From: 2,
 					To:   3,
-					Fingerprints: []model.Fingerprint{
-						0,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
 					},
 				},
 			},
@@ -182,16 +182,16 @@ func TestGroupByTime(t *testing.T) {
 				&timeGroup{
 					From: 0,
 					To:   2,
-					Fingerprints: []model.Fingerprint{
-						1,
-						0,
+					Fingerprints: map[model.Fingerprint]bool{
+						1: true,
+						0: true,
 					},
 				},
 				&timeGroup{
 					From: 2,
 					To:   3,
-					Fingerprints: []model.Fingerprint{
-						0,
+					Fingerprints: map[model.Fingerprint]bool{
+						0: true,
 					},
 				},
 			},
