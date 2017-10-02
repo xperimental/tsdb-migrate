@@ -37,9 +37,9 @@ type timeGroup struct {
 func (g *timeGroup) String() string {
 	fingerprints := &bytes.Buffer{}
 	for f := range g.Fingerprints {
-		fmt.Fprintf(fingerprints, "%s ", f)
+		fmt.Fprintf(fingerprints, "%s, ", f)
 	}
-	return fmt.Sprintf("(%d, %d, %s)", g.From, g.To, fingerprints)
+	return fmt.Sprintf("(%d, %d, [%s])", g.From, g.To, fingerprints)
 }
 
 type metricSample struct {
@@ -63,7 +63,11 @@ func runInput(ctx context.Context, inputDir string) (chan metricSample, error) {
 		groupedByTime := groupByTime(timeSortedFingerprints)
 
 		for i, group := range groupedByTime {
-			fmt.Printf("%d -> %#v", i, group)
+			diff := 0
+			if i > 0 {
+				diff = int(groupedByTime[i-1].To - group.From)
+			}
+			fmt.Printf("group %d: %d (%d) -> %d; %d metrics\n", i, group.From, diff, group.To, len(group.Fingerprints))
 		}
 	}()
 	return ch, nil
