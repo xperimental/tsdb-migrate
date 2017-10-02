@@ -7,8 +7,9 @@ import (
 
 // Sample contains one sample of one timeseries at a certain time.
 type Sample struct {
-	Time  model.Time
-	Value float64
+	Fingerprint model.Fingerprint
+	Time        model.Time
+	Value       float64
 }
 
 // SampleReader provides an interface to read samples from a metric in time order.
@@ -18,6 +19,7 @@ type SampleReader interface {
 }
 
 type sampleReader struct {
+	fpr      model.Fingerprint
 	reader   ChunkReadCloser
 	iterator chunk.Iterator
 }
@@ -47,8 +49,9 @@ func (r *sampleReader) Read() (Sample, error) {
 
 	pair := r.iterator.Value()
 	return Sample{
-		Time:  pair.Timestamp,
-		Value: float64(pair.Value),
+		Fingerprint: r.fpr,
+		Time:        pair.Timestamp,
+		Value:       float64(pair.Value),
 	}, nil
 }
 
@@ -58,8 +61,9 @@ func (r *sampleReader) Close() error {
 }
 
 // NewSampleReader creates a new SampleReader.
-func NewSampleReader(chunkReader ChunkReadCloser) SampleReader {
+func NewSampleReader(fpr model.Fingerprint, chunkReader ChunkReadCloser) SampleReader {
 	return &sampleReader{
+		fpr:      fpr,
 		reader:   chunkReader,
 		iterator: nil,
 	}

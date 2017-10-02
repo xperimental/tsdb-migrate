@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/prometheus/common/model"
@@ -29,12 +28,24 @@ func runInput(ctx context.Context, inputDir string) (chan metricSample, error) {
 
 		groupedByTime := fprgroup.CreateGroups(seriesMap)
 
-		for i, group := range groupedByTime {
-			diff := 0
-			if i > 0 {
-				diff = int(groupedByTime[i-1].To - group.From)
+		readers := make(map[model.Fingerprint]minilocal.SampleReader)
+		for _, group := range groupedByTime {
+			for fpr := range group.Fingerprints {
+				if _, ok := readers[fpr]; ok {
+					continue
+				}
+
+				log.Printf("Opening reader for %s...", fpr)
+				chunkReader, err := minilocal.NewReader(inputDir, fpr)
+				if err != nil {
+					log.Printf("Error opening reader for %s: %s", fpr, err)
+					continue
+				}
+
+				readers[fpr] = minilocal.NewSampleReader(fpr, chunkReader)
 			}
-			fmt.Printf("group %d: %d (%d) -> %d; %d metrics\n", i, group.From, diff, group.To, len(group.Fingerprints))
+
+			// Read samples from readers
 		}
 	}()
 	return ch, nil
