@@ -1,4 +1,4 @@
-package main
+package fprgroup
 
 import (
 	"reflect"
@@ -11,12 +11,12 @@ func TestGroupByTime(t *testing.T) {
 	for _, test := range []struct {
 		desc         string
 		fingerprints []seriesTime
-		groups       []*timeGroup
+		groups       []*Group
 	}{
 		{
 			desc:         "empty",
 			fingerprints: []seriesTime{},
-			groups:       []*timeGroup{},
+			groups:       []*Group{},
 		},
 		{
 			desc: "single series",
@@ -27,8 +27,8 @@ func TestGroupByTime(t *testing.T) {
 					Fingerprint: 0,
 				},
 			},
-			groups: []*timeGroup{
-				&timeGroup{
+			groups: []*Group{
+				&Group{
 					From: 0,
 					To:   1,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -51,15 +51,15 @@ func TestGroupByTime(t *testing.T) {
 					Fingerprint: 1,
 				},
 			},
-			groups: []*timeGroup{
-				&timeGroup{
+			groups: []*Group{
+				&Group{
 					From: 0,
 					To:   1,
 					Fingerprints: map[model.Fingerprint]bool{
 						0: true,
 					},
 				},
-				&timeGroup{
+				&Group{
 					From: 2,
 					To:   3,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -82,8 +82,8 @@ func TestGroupByTime(t *testing.T) {
 					Fingerprint: 1,
 				},
 			},
-			groups: []*timeGroup{
-				&timeGroup{
+			groups: []*Group{
+				&Group{
 					From: 0,
 					To:   1,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -107,15 +107,15 @@ func TestGroupByTime(t *testing.T) {
 					Fingerprint: 1,
 				},
 			},
-			groups: []*timeGroup{
-				&timeGroup{
+			groups: []*Group{
+				&Group{
 					From: 0,
 					To:   1,
 					Fingerprints: map[model.Fingerprint]bool{
 						0: true,
 					},
 				},
-				&timeGroup{
+				&Group{
 					From: 1,
 					To:   2,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -123,7 +123,7 @@ func TestGroupByTime(t *testing.T) {
 						1: true,
 					},
 				},
-				&timeGroup{
+				&Group{
 					From: 2,
 					To:   3,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -146,8 +146,8 @@ func TestGroupByTime(t *testing.T) {
 					Fingerprint: 1,
 				},
 			},
-			groups: []*timeGroup{
-				&timeGroup{
+			groups: []*Group{
+				&Group{
 					From: 0,
 					To:   2,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -155,7 +155,7 @@ func TestGroupByTime(t *testing.T) {
 						1: true,
 					},
 				},
-				&timeGroup{
+				&Group{
 					From: 2,
 					To:   3,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -178,8 +178,8 @@ func TestGroupByTime(t *testing.T) {
 					Fingerprint: 0,
 				},
 			},
-			groups: []*timeGroup{
-				&timeGroup{
+			groups: []*Group{
+				&Group{
 					From: 0,
 					To:   2,
 					Fingerprints: map[model.Fingerprint]bool{
@@ -187,7 +187,7 @@ func TestGroupByTime(t *testing.T) {
 						0: true,
 					},
 				},
-				&timeGroup{
+				&Group{
 					From: 2,
 					To:   3,
 					Fingerprints: map[model.Fingerprint]bool{
