@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"sort"
-	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/xperimental/tsdb-migrate/minilocal"
@@ -34,7 +33,6 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 				continue
 			}
 
-			log.Printf("Opening reader for %s...", fpr)
 			chunkReader, err := minilocal.NewReader(inputDir, fpr)
 			if err != nil {
 				log.Printf("Error opening reader for %s: %s", fpr, err)
@@ -57,8 +55,6 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 				return
 			}
 
-			log.Printf("Open readers: %d", len(readers))
-
 			samples := make([]metricSample, 0, len(readers))
 			toClose := []model.Fingerprint{}
 			for fpr, r := range readers {
@@ -75,8 +71,6 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 					})
 				}
 			}
-
-			log.Printf("Read %d samples. %d readers to close.", len(samples), len(toClose))
 
 			for _, fpr := range toClose {
 				r := readers[fpr]
@@ -99,7 +93,6 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 
 				var sample metricSample
 				sample, samples = samples[0], samples[1:]
-				log.Printf("%d samples; %s first time", len(samples), time.Unix(int64(sample.Time/1000), 0))
 
 				ch <- sample
 

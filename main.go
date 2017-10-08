@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"time"
 
+	kitlog "github.com/go-kit/kit/log"
 	"github.com/prometheus/tsdb"
-
 	"github.com/xperimental/tsdb-migrate/config"
 	"github.com/xperimental/tsdb-migrate/minilocal"
 )
@@ -74,15 +74,17 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 		NoLockfile:        false,
 	}
 
+	logger := kitlog.NewLogfmtLogger(os.Stderr)
+
 	log.Printf("Opening TSDB: %s", dir)
-	db, err := tsdb.Open(dir, nil, nil, tsdbOpts)
+	db, err := tsdb.Open(dir, kitlog.With(logger, "component", "tsdb"), nil, tsdbOpts)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	ch := make(chan metricSample)
 	done := make(chan struct{})
-	go func() {
+	go func(logger kitlog.Logger) {
 		defer close(done)
 
 		oldest := time.Now().Add(-retentionTime)
@@ -111,6 +113,8 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 					log.Printf("Error committing appender: %s", err)
 				}
 				appender = nil
+
+				logger.Log("msg", "Flushed Appender", "last", time.Unix(int64(sample.Time/1000), 0))
 			}
 		}
 
@@ -123,7 +127,7 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 		if err := db.Close(); err != nil {
 			log.Printf("Error closing tsdb: %s", err)
 		}
-	}()
+	}(kitlog.With(logger, "component", "output"))
 
 	return ch, done, nil
 }

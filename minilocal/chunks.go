@@ -3,7 +3,6 @@ package minilocal
 import (
 	"errors"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -83,7 +82,6 @@ func NewReader(baseDir string, fpr model.Fingerprint) (ChunkReadCloser, error) {
 
 	fileSize := fileInfo.Size()
 	chunkCount := int(fileSize / chunkLenWithHeader)
-	log.Printf("file size: %d chunks: %d", fileSize, chunkCount)
 
 	return &chunkReader{
 		fileName: fileName,
