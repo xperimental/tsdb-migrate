@@ -1,6 +1,7 @@
 package minilocal
 
 import (
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -10,6 +11,11 @@ import (
 	"github.com/prometheus/prometheus/storage/local/chunk"
 )
 
+var (
+	// ErrAlreadyClosed is used when reading from an already closed reader.
+	ErrAlreadyClosed = errors.New("already closed")
+)
+
 // ChunkReadCloser provides an interface to read chunks from a series.
 type ChunkReadCloser interface {
 	Read() (chunk.Chunk, error)
@@ -17,18 +23,34 @@ type ChunkReadCloser interface {
 }
 
 type chunkReader struct {
-	file    *os.File
-	chunks  int
-	current int
+	fileName string
+	chunks   int
+	current  int
+	closed   bool
 }
 
 func (r *chunkReader) Read() (chunk.Chunk, error) {
+	if r.closed {
+		return nil, ErrAlreadyClosed
+	}
+
 	if r.current == r.chunks {
 		return nil, io.EOF
 	}
 
+	file, err := os.Open(r.fileName)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	pos := int64(r.current * chunkLenWithHeader)
+	if _, err := file.Seek(pos, 0); err != nil {
+		return nil, err
+	}
+
 	r.current++
-	chunk, err := readChunk(r.file)
+	chunk, err := readChunk(file)
 	if err != nil {
 		return nil, err
 	}
@@ -37,10 +59,11 @@ func (r *chunkReader) Read() (chunk.Chunk, error) {
 }
 
 func (r *chunkReader) Close() error {
+	r.closed = true
 	r.chunks = 0
 	r.current = 0
 
-	return r.file.Close()
+	return nil
 }
 
 // NewReader creates a new reader to read chunks from a series.
@@ -51,6 +74,7 @@ func NewReader(baseDir string, fpr model.Fingerprint) (ChunkReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -62,9 +86,10 @@ func NewReader(baseDir string, fpr model.Fingerprint) (ChunkReadCloser, error) {
 	log.Printf("file size: %d chunks: %d", fileSize, chunkCount)
 
 	return &chunkReader{
-		file:    file,
-		chunks:  chunkCount,
-		current: -1,
+		fileName: fileName,
+		chunks:   chunkCount,
+		current:  0,
+		closed:   false,
 	}, nil
 }
 
