@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"sort"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/xperimental/tsdb-migrate/minilocal"
@@ -16,7 +17,7 @@ type metricSample struct {
 }
 
 func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
-	ch := make(chan metricSample)
+	ch := make(chan metricSample, 2*maxAppendPerAppender)
 	abort := make(chan struct{})
 	go func() {
 		defer close(ch)
@@ -81,7 +82,10 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 				}
 			}
 
+			sum := time.Duration(0)
+			count := 0
 			for {
+				start := time.Now()
 				if len(samples) == 0 {
 					log.Printf("No samples left.")
 					break
@@ -91,14 +95,16 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 					return samples[i].Time < samples[j].Time
 				})
 
-				var sample metricSample
-				sample, samples = samples[0], samples[1:]
+				sample := samples[0]
 
 				ch <- sample
 
 				fpr := sample.Fingerprint
 				next, err := readers[fpr].Read()
 				if err != nil {
+					log.Printf("Closing reader for %s", fpr)
+
+					samples = samples[1:]
 					r := readers[fpr]
 					delete(readers, fpr)
 
@@ -109,12 +115,19 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 					continue
 				}
 
-				samples = append(samples, metricSample{
+				samples[0] = metricSample{
 					Fingerprint: fpr,
 					Metric:      sample.Metric,
 					Time:        next.Time,
 					Value:       next.Value,
-				})
+				}
+
+				count++
+				sum += time.Now().Sub(start)
+
+				if count%maxAppendPerAppender == 0 {
+					log.Printf("avg loop time: %s", sum/time.Duration(count))
+				}
 			}
 		}
 	}()
