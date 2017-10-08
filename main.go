@@ -7,6 +7,9 @@ import (
 	"syscall"
 	"time"
 
+	"net/http"
+	_ "net/http/pprof"
+
 	kitlog "github.com/go-kit/kit/log"
 	"github.com/prometheus/tsdb"
 	"github.com/xperimental/tsdb-migrate/config"
@@ -32,6 +35,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating output: %s", err)
 	}
+
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	runLoop(input, abortInput, output)
 
