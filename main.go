@@ -28,7 +28,7 @@ func main() {
 		log.Fatalf("Error starting input: %s", err)
 	}
 
-	output, err := createOutput(config.OutputDirectory, config.RetentionTime)
+	output, finish, err := createOutput(config.OutputDirectory, config.RetentionTime)
 	if err != nil {
 		log.Fatalf("Error creating output: %s", err)
 	}
@@ -36,6 +36,7 @@ func main() {
 	runLoop(input, abortInput, output)
 
 	log.Printf("Shutting down...")
+	<-finish
 }
 
 func runLoop(input <-chan metricSample, inputAbort chan<- struct{}, output chan<- metricSample) {
@@ -65,7 +66,7 @@ func runLoop(input <-chan metricSample, inputAbort chan<- struct{}, output chan<
 	}
 }
 
-func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample, error) {
+func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample, <-chan struct{}, error) {
 	tsdbOpts := &tsdb.Options{
 		WALFlushInterval:  5 * time.Minute,
 		RetentionDuration: uint64(retentionTime.Seconds() * 1000),
@@ -76,11 +77,14 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 	log.Printf("Opening TSDB: %s", dir)
 	db, err := tsdb.Open(dir, nil, nil, tsdbOpts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ch := make(chan metricSample)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
+
 		oldest := time.Now().Add(-retentionTime)
 		var appender tsdb.Appender
 		appendCount := 0
@@ -97,7 +101,6 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 				appendCount = 0
 			}
 
-			log.Printf("append time: %s", time.Unix(int64(sample.Time/1000), 0))
 			if _, err := appender.Add(labels, int64(sample.Time), sample.Value); err != nil {
 				log.Fatalf("Error appending value %#v: %s", sample, err)
 			}
@@ -122,5 +125,5 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 		}
 	}()
 
-	return ch, nil
+	return ch, done, nil
 }

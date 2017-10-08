@@ -10,9 +10,10 @@ import (
 )
 
 type metricSample struct {
-	Metric model.Metric
-	Time   model.Time
-	Value  float64
+	Fingerprint model.Fingerprint
+	Metric      model.Metric
+	Time        model.Time
+	Value       float64
 }
 
 func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
@@ -67,9 +68,10 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 					toClose = append(toClose, fpr)
 				default:
 					samples = append(samples, metricSample{
-						Metric: seriesMap[sample.Fingerprint].Metric(),
-						Time:   sample.Time,
-						Value:  sample.Value,
+						Fingerprint: fpr,
+						Metric:      seriesMap[sample.Fingerprint].Metric(),
+						Time:        sample.Time,
+						Value:       sample.Value,
 					})
 				}
 			}
@@ -85,16 +87,41 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 				}
 			}
 
-			sort.Slice(samples, func(i, j int) bool {
-				return samples[i].Time < samples[j].Time
-			})
-
-			if len(samples) > 0 {
-				log.Printf("Current time: %s", time.Unix(int64(samples[0].Time/1000), 0))
-
-				for _, s := range samples {
-					ch <- s
+			for {
+				if len(samples) == 0 {
+					log.Printf("No samples left.")
+					break
 				}
+
+				sort.Slice(samples, func(i, j int) bool {
+					return samples[i].Time < samples[j].Time
+				})
+
+				var sample metricSample
+				sample, samples = samples[0], samples[1:]
+				log.Printf("%d samples; %s first time", len(samples), time.Unix(int64(sample.Time/1000), 0))
+
+				ch <- sample
+
+				fpr := sample.Fingerprint
+				next, err := readers[fpr].Read()
+				if err != nil {
+					r := readers[fpr]
+					delete(readers, fpr)
+
+					if err := r.Close(); err != nil {
+						log.Printf("Error closing reader for %s: %s", fpr, err)
+					}
+
+					continue
+				}
+
+				samples = append(samples, metricSample{
+					Fingerprint: fpr,
+					Metric:      sample.Metric,
+					Time:        next.Time,
+					Value:       next.Value,
+				})
 			}
 		}
 	}()
