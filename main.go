@@ -57,7 +57,6 @@ func runLoop(input <-chan metricSample, inputAbort chan<- struct{}, output chan<
 				inputAbort <- struct{}{}
 			}()
 
-			signal.Reset()
 			return
 		case in, ok := <-input:
 			if !ok {
@@ -113,12 +112,14 @@ func createOutput(dir string, retentionTime time.Duration, flushInterval int) (c
 			appendCount++
 
 			if appendCount > flushInterval {
-				if err := appender.Commit(); err != nil {
-					log.Printf("Error committing appender: %s", err)
-				}
-				appender = nil
+				go func(a tsdb.Appender, timeSec int64) {
+					if err := a.Commit(); err != nil {
+						log.Printf("Error committing appender: %s", err)
+					}
 
-				logger.Log("msg", "Flushed Appender", "last", time.Unix(int64(sample.Time/1000), 0))
+					logger.Log("msg", "Flushed Appender", "last", time.Unix(timeSec, 0))
+				}(appender, int64(sample.Time/1000))
+				appender = nil
 			}
 		}
 

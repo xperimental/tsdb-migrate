@@ -122,7 +122,6 @@ func runInput(inputDir string, bufferSize int) (chan metricSample, chan struct{}
 						break
 					}
 				}
-				//log.Printf("len %d; insert at %d; cur %d; next %d; nextsample %d", len(samples), i, sample.Time, next.Time, samples[i].Time)
 
 				samples = append(samples, metricSample{})
 				copy(samples[i+1:], samples[i:])
@@ -135,10 +134,6 @@ func runInput(inputDir string, bufferSize int) (chan metricSample, chan struct{}
 
 				count++
 				sum += time.Now().Sub(start)
-
-				if count%bufferSize == 0 {
-					log.Printf("avg loop time: %s", sum/time.Duration(count))
-				}
 			}
 		}
 	}()
