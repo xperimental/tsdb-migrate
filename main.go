@@ -27,7 +27,7 @@ func main() {
 		log.Fatalf("Error starting input: %s", err)
 	}
 
-	output, finish, err := createOutput(config.OutputDirectory, config.RetentionTime, config.FlushInterval)
+	output, finish, err := createOutput(config.OutputDirectory, config.RetentionTime, config.FlushInterval, config.WALFlushInterval)
 	if err != nil {
 		log.Fatalf("Error creating output: %s", err)
 	}
@@ -69,9 +69,9 @@ func runLoop(input <-chan metricSample, inputAbort chan<- struct{}, output chan<
 	}
 }
 
-func createOutput(dir string, retentionTime time.Duration, flushInterval int) (chan<- metricSample, <-chan struct{}, error) {
+func createOutput(dir string, retentionTime time.Duration, flushInterval int, walFlush time.Duration) (chan<- metricSample, <-chan struct{}, error) {
 	tsdbOpts := &tsdb.Options{
-		WALFlushInterval:  5 * time.Minute,
+		WALFlushInterval:  walFlush,
 		RetentionDuration: uint64(retentionTime.Seconds() * 1000),
 		BlockRanges:       tsdb.ExponentialBlockRanges(int64(2*time.Hour)/1e6, 3, 5),
 		NoLockfile:        false,

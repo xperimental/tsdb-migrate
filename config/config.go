@@ -11,19 +11,21 @@ import (
 
 // MigrateConfig contains the configuration of the migration tool.
 type MigrateConfig struct {
-	InputDirectory  string
-	OutputDirectory string
-	RetentionTime   time.Duration
-	FlushInterval   int
-	BufferSize      int
+	InputDirectory   string
+	OutputDirectory  string
+	RetentionTime    time.Duration
+	FlushInterval    int
+	WALFlushInterval time.Duration
+	BufferSize       int
 }
 
 var defaultConfig = MigrateConfig{
-	InputDirectory:  "",
-	OutputDirectory: "",
-	RetentionTime:   15 * 24 * time.Hour,
-	FlushInterval:   10000000,
-	BufferSize:      10000,
+	InputDirectory:   "",
+	OutputDirectory:  "",
+	RetentionTime:    15 * 24 * time.Hour,
+	FlushInterval:    10000000,
+	WALFlushInterval: 5 * time.Minute,
+	BufferSize:       10000,
 }
 
 // ParseFlags creates a new configuration from the command-line parameters.
@@ -34,6 +36,7 @@ func ParseFlags() (MigrateConfig, error) {
 	pflag.StringVarP(&config.OutputDirectory, "output", "o", config.OutputDirectory, "Directory for new TSDB database.")
 	pflag.DurationVarP(&config.RetentionTime, "retention", "r", config.RetentionTime, "Retention time of new database.")
 	pflag.IntVarP(&config.FlushInterval, "flush-interval", "f", config.FlushInterval, "Flush interval in number of samples.")
+	pflag.DurationVar(&config.WALFlushInterval, "wal-flush-interval", config.WALFlushInterval, "tsdb WAL flush interval.")
 	pflag.IntVar(&config.BufferSize, "buffer-size", config.BufferSize, "Input buffer size.")
 	pflag.Parse()
 
