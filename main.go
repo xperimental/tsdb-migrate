@@ -16,22 +16,18 @@ import (
 	"github.com/xperimental/tsdb-migrate/minilocal"
 )
 
-const (
-	maxAppendPerAppender = 100000
-)
-
 func main() {
 	config, err := config.ParseFlags()
 	if err != nil {
 		log.Fatalf("Error in flags: %s", err)
 	}
 
-	input, abortInput, err := runInput(config.InputDirectory)
+	input, abortInput, err := runInput(config.InputDirectory, config.BufferSize)
 	if err != nil {
 		log.Fatalf("Error starting input: %s", err)
 	}
 
-	output, finish, err := createOutput(config.OutputDirectory, config.RetentionTime)
+	output, finish, err := createOutput(config.OutputDirectory, config.RetentionTime, config.FlushInterval)
 	if err != nil {
 		log.Fatalf("Error creating output: %s", err)
 	}
@@ -44,6 +40,7 @@ func main() {
 
 	log.Printf("Shutting down...")
 	<-finish
+	log.Printf("Output finished.")
 }
 
 func runLoop(input <-chan metricSample, inputAbort chan<- struct{}, output chan<- metricSample) {
@@ -73,7 +70,7 @@ func runLoop(input <-chan metricSample, inputAbort chan<- struct{}, output chan<
 	}
 }
 
-func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample, <-chan struct{}, error) {
+func createOutput(dir string, retentionTime time.Duration, flushInterval int) (chan<- metricSample, <-chan struct{}, error) {
 	tsdbOpts := &tsdb.Options{
 		WALFlushInterval:  5 * time.Minute,
 		RetentionDuration: uint64(retentionTime.Seconds() * 1000),
@@ -115,7 +112,7 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 			}
 			appendCount++
 
-			if appendCount > maxAppendPerAppender {
+			if appendCount > flushInterval {
 				if err := appender.Commit(); err != nil {
 					log.Printf("Error committing appender: %s", err)
 				}

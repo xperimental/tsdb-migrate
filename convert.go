@@ -16,8 +16,8 @@ type metricSample struct {
 	Value       float64
 }
 
-func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
-	ch := make(chan metricSample, 2*maxAppendPerAppender)
+func runInput(inputDir string, bufferSize int) (chan metricSample, chan struct{}, error) {
+	ch := make(chan metricSample, bufferSize)
 	abort := make(chan struct{})
 	go func() {
 		defer close(ch)
@@ -136,7 +136,7 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 				count++
 				sum += time.Now().Sub(start)
 
-				if count%maxAppendPerAppender == 0 {
+				if count%bufferSize == 0 {
 					log.Printf("avg loop time: %s", sum/time.Duration(count))
 				}
 			}
