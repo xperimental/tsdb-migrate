@@ -3,7 +3,6 @@ package minilocal
 import (
 	"errors"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -30,7 +29,6 @@ type chunkReader struct {
 }
 
 func (r *chunkReader) Read() (chunk.Chunk, error) {
-	log.Printf("next chunk for %s", r.fileName)
 	if r.closed {
 		return nil, ErrAlreadyClosed
 	}

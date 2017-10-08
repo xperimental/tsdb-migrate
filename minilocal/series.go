@@ -33,7 +33,13 @@ func LoadSeriesMap(inputDir string) (SeriesMap, error) {
 	return seriesMap, nil
 }
 
-func ConvertMetric(metric model.Metric) labels.Labels {
+var labelsCache = make(map[model.Fingerprint]labels.Labels)
+
+func ConvertMetric(fpr model.Fingerprint, metric model.Metric) labels.Labels {
+	if labels, ok := labelsCache[fpr]; ok {
+		return labels
+	}
+
 	result := make(labels.Labels, 0, len(metric))
 	for name, value := range metric {
 		result = append(result, labels.Label{
@@ -43,5 +49,7 @@ func ConvertMetric(metric model.Metric) labels.Labels {
 	}
 
 	sort.Sort(result)
+
+	labelsCache[fpr] = result
 	return result
 }

@@ -82,6 +82,10 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 				}
 			}
 
+			sort.Slice(samples, func(i, j int) bool {
+				return samples[i].Time < samples[j].Time
+			})
+
 			sum := time.Duration(0)
 			count := 0
 			for {
@@ -91,11 +95,8 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 					break
 				}
 
-				sort.Slice(samples, func(i, j int) bool {
-					return samples[i].Time < samples[j].Time
-				})
-
-				sample := samples[0]
+				var sample metricSample
+				sample, samples = samples[0], samples[1:]
 
 				ch <- sample
 
@@ -115,7 +116,17 @@ func runInput(inputDir string) (chan metricSample, chan struct{}, error) {
 					continue
 				}
 
-				samples[0] = metricSample{
+				i := 0
+				for ; i < len(samples); i++ {
+					if samples[i].Time >= next.Time {
+						break
+					}
+				}
+				//log.Printf("len %d; insert at %d; cur %d; next %d; nextsample %d", len(samples), i, sample.Time, next.Time, samples[i].Time)
+
+				samples = append(samples, metricSample{})
+				copy(samples[i+1:], samples[i:])
+				samples[i] = metricSample{
 					Fingerprint: fpr,
 					Metric:      sample.Metric,
 					Time:        next.Time,

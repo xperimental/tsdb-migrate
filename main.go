@@ -103,7 +103,7 @@ func createOutput(dir string, retentionTime time.Duration) (chan<- metricSample,
 				continue
 			}
 
-			labels := minilocal.ConvertMetric(sample.Metric)
+			labels := minilocal.ConvertMetric(sample.Fingerprint, sample.Metric)
 
 			if appender == nil {
 				appender = db.Appender()
